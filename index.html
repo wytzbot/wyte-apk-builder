@@ -2,187 +2,88 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Wyte Builder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Wyte APK Builder</title>
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#0F172A">
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <meta name="theme-color" content="#6750A4">
   <style>
-    .gradient-bg { background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); }
-    .glass { backdrop-filter: blur(16px); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
-    @keyframes fadeIn { from {opacity:0; transform:translateY(10px)} to {opacity:1; transform:translateY(0)} }
-    .animate-fadeIn { animation: fadeIn 0.5s ease; }
-    input[type="color"] { -webkit-appearance: none; padding: 0; border: none; background: none; height: 2.75rem; width: 100%; }
-    input[type="color"]::-webkit-color-swatch { border-radius: 0.5rem; border: 1px solid rgba(255,255,255,0.15); }
+    :root {
+      --md-sys-color-primary: #6750A4;
+      --md-sys-color-surface: #FEF7FF;
+      --md-sys-color-on-surface: #1D1B20;
+      --md-sys-color-surface-container: #F3EDF7;
+      --md-sys-color-outline: #79747E;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --md-sys-color-primary: #D0BCFF;
+        --md-sys-color-surface: #141218;
+        --md-sys-color-on-surface: #E6E1E5;
+        --md-sys-color-surface-container: #211F26;
+        --md-sys-color-outline: #938F99;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background-color: var(--md-sys-color-surface); color: var(--md-sys-color-on-surface); min-height: 100vh; display: flex; flex-direction: column; }
+    header { padding: 16px; background: var(--md-sys-color-surface-container); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--md-sys-color-outline); }
+    main { flex: 1; padding: 16px; max-width: 600px; width: 100%; margin: 0 auto; }
+    .card { background: var(--md-sys-color-surface-container); padding: 20px; border-radius: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    input, select { width: 100%; padding: 12px; margin: 8px 0 16px 0; border-radius: 8px; border: 1px solid var(--md-sys-color-outline); background: transparent; color: inherit; }
+    button { background: var(--md-sys-color-primary); color: var(--md-sys-color-surface); border: none; padding: 12px 20px; border-radius: 20px; font-weight: bold; cursor: pointer; width: 100%; transition: transform 0.1s; }
+    button:active { transform: scale(0.98); }
+    .hidden { display: none !important; }
   </style>
 </head>
-<body class="gradient-bg text-white min-h-screen">
-  <div id="app" class="flex flex-col items-center justify-center min-h-screen p-6">
-
-    <!-- WELCOME PAGE - Shows when logged out -->
-    <div id="welcome" class="text-center max-w-md glass p-10 rounded-3xl shadow-2xl animate-fadeIn">
-      <div class="text-6xl mb-4">🚀</div>
-      <h1 class="text-4xl font-bold mb-3">Wyte Builder</h1>
-      <p class="text-gray-300 mb-8">Convert any website to Native Android APK. Fast builds. Professional results.</p>
-
-      <div id="authError" class="hidden text-left text-sm text-red-300 bg-red-950/50 border border-red-800 rounded-lg p-3 mb-4"></div>
-
-      <button onclick="login()" class="w-full bg-indigo-600 hover:bg-indigo-500 px-6 py-4 rounded-xl font-bold text-lg transition transform hover:scale-105">
-        Continue with GitHub
-      </button>
-      <p class="text-xs text-gray-400 mt-4">You'll be redirected to github.com to sign in. We never see your password.</p>
+<body>
+  <header>
+    <h2>Wyte APK Builder</h2>
+    <button id="auth-btn" style="width: auto; padding: 8px 16px; font-size: 14px;">Connect GitHub</button>
+  </header>
+  <main>
+    <div id="welcome-card" class="card">
+      <h3 id="greeting">Good Morning 👋</h3>
+      <p style="margin: 8px 0 16px 0; color: var(--md-sys-color-outline);">Let's turn your website into a beautiful Android app.</p>
     </div>
 
-    <!-- DASHBOARD - Shows when logged in -->
-    <div id="dashboard" class="hidden w-full max-w-3xl animate-fadeIn">
+    <div class="card">
+      <h3>Build Configuration</h3>
+      <form id="build-form">
+        <label>Website URL</label>
+        <input type="url" id="url" required placeholder="https://example.com">
+        
+        <label>App Name</label>
+        <input type="text" id="appName" required placeholder="My Awesome App">
+        
+        <label>Package Name</label>
+        <input type="text" id="packageName" required placeholder="com.example.app">
+        
+        <label>Version Name</label>
+        <input type="text" id="version" value="1.0.0">
 
-      <!-- USER INFO + LOGOUT -->
-      <div class="glass p-6 rounded-2xl mb-6 flex items-center justify-between gap-4">
-        <div class="flex items-center gap-4">
-          <img id="avatar" class="w-14 h-14 rounded-full border-2 border-indigo-600">
-          <div>
-            <h2 class="text-2xl font-bold">Welcome back, <span id="username"></span></h2>
-            <p class="text-gray-400">Ready to build your next APK?</p>
-          </div>
-        </div>
-        <button onclick="logout()" class="bg-red-600 hover:bg-red-500 px-4 py-2 rounded-lg text-sm font-semibold">Logout</button>
-      </div>
+        <label>Orientation</label>
+        <select id="orientation">
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+          <option value="full">Full Sensor</option>
+        </select>
 
-      <!-- BUILD FORM -->
-      <div class="glass p-8 rounded-2xl">
-        <h3 class="text-2xl font-semibold mb-4">New APK Build</h3>
-
-        <label class="text-sm text-gray-400">App Name *</label>
-        <input id="appName" type="text" placeholder="MyApp" class="w-full p-3 rounded-lg bg-gray-900 text-white mb-3 outline-none focus:ring-2 focus:ring-indigo-600">
-
-        <label class="text-sm text-gray-400">Website URL *</label>
-        <input id="url" type="text" placeholder="https://example.com" class="w-full p-3 rounded-lg bg-gray-900 text-white mb-3 outline-none focus:ring-2 focus:ring-indigo-600">
-
-        <label class="text-sm text-gray-400">Package Name *</label>
-        <input id="packageName" type="text" placeholder="com.example.myapp" class="w-full p-3 rounded-lg bg-gray-900 text-white mb-4 outline-none focus:ring-2 focus:ring-indigo-600">
-
-        <details class="mb-4">
-          <summary class="cursor-pointer text-sm text-indigo-300 hover:text-indigo-200 select-none">Advanced settings</summary>
-          <div class="mt-4 grid grid-cols-2 gap-3">
-            <div>
-              <label class="text-xs text-gray-400">Version</label>
-              <input id="versionName" type="text" value="1.0.0" class="w-full p-2.5 rounded-lg bg-gray-900 text-white outline-none focus:ring-2 focus:ring-indigo-600">
-            </div>
-            <div>
-              <label class="text-xs text-gray-400">Version Code</label>
-              <input id="versionCode" type="number" min="1" value="1" class="w-full p-2.5 rounded-lg bg-gray-900 text-white outline-none focus:ring-2 focus:ring-indigo-600">
-            </div>
-            <div>
-              <label class="text-xs text-gray-400">Orientation</label>
-              <select id="orientation" class="w-full p-2.5 rounded-lg bg-gray-900 text-white outline-none focus:ring-2 focus:ring-indigo-600">
-                <option value="default">Default</option>
-                <option value="portrait">Portrait</option>
-                <option value="landscape">Landscape</option>
-              </select>
-            </div>
-            <div>
-              <label class="text-xs text-gray-400">Display Mode</label>
-              <select id="displayMode" class="w-full p-2.5 rounded-lg bg-gray-900 text-white outline-none focus:ring-2 focus:ring-indigo-600">
-                <option value="standalone">Standalone</option>
-                <option value="fullscreen">Fullscreen</option>
-                <option value="minimal-ui">Minimal UI</option>
-              </select>
-            </div>
-            <div>
-              <label class="text-xs text-gray-400">Theme Color</label>
-              <input id="themeColor" type="color" value="#4F46E5">
-            </div>
-            <div>
-              <label class="text-xs text-gray-400">Splash Background</label>
-              <input id="backgroundColor" type="color" value="#0F172A">
-            </div>
-            <div>
-              <label class="text-xs text-gray-400">Fallback Renderer</label>
-              <select id="fallbackType" class="w-full p-2.5 rounded-lg bg-gray-900 text-white outline-none focus:ring-2 focus:ring-indigo-600">
-                <option value="customtabs">Custom Tabs</option>
-                <option value="webview">WebView</option>
-              </select>
-            </div>
-            <div class="flex items-end gap-2 pb-2.5">
-              <input id="enableNotifications" type="checkbox" class="w-4 h-4">
-              <label for="enableNotifications" class="text-xs text-gray-400">Enable push notifications</label>
-            </div>
-            <div class="col-span-2">
-              <label class="text-xs text-gray-400">Icon URL (optional — auto-detected from site if left blank)</label>
-              <input id="iconUrl" type="text" placeholder="https://example.com/icon-512.png" class="w-full p-2.5 rounded-lg bg-gray-900 text-white outline-none focus:ring-2 focus:ring-indigo-600">
-            </div>
-            <div class="col-span-2">
-              <label class="text-xs text-gray-400">Start Path</label>
-              <input id="startUrl" type="text" value="/" class="w-full p-2.5 rounded-lg bg-gray-900 text-white outline-none focus:ring-2 focus:ring-indigo-600">
-            </div>
-          </div>
-        </details>
-
-        <button id="buildBtn" onclick="triggerBuild()" class="w-full bg-green-600 hover:bg-green-500 px-6 py-4 rounded-xl font-bold text-lg transition disabled:opacity-50">Generate APK</button>
-        <p class="text-xs text-gray-400 mt-3 text-center">Build takes 2-3 mins. Download from the Actions tab.</p>
-      </div>
+        <button type="submit">Generate APK via GitHub</button>
+      </form>
     </div>
 
-    <!-- PROCESSING SCREEN - Shows while a build is running -->
-    <div id="processing" class="hidden w-full max-w-xl glass p-8 rounded-2xl animate-fadeIn">
-      <div class="text-center mb-6">
-        <div id="processingSpinner" class="w-14 h-14 mx-auto mb-4 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-        <h2 class="text-2xl font-bold">Building your APK</h2>
-        <p id="processingSubtitle" class="text-gray-400 text-sm mt-1">Looking for the build on GitHub Actions…</p>
-      </div>
-
-      <ul id="stageList" class="space-y-2 mb-6"></ul>
-
-      <div class="flex justify-between text-xs text-gray-400 mb-6">
-        <span id="elapsedTime">Elapsed: 0:00</span>
-        <span id="remainingTime">Typical build: ~3:00</span>
-      </div>
-
-      <div id="processingActions" class="flex gap-3">
-        <button id="cancelBuildBtn" onclick="cancelBuild()" class="flex-1 bg-gray-700 hover:bg-gray-600 px-4 py-3 rounded-xl font-semibold">Cancel</button>
-        <a id="viewLogsBtn" href="#" target="_blank" rel="noopener" class="flex-1 text-center bg-gray-800 hover:bg-gray-700 px-4 py-3 rounded-xl font-semibold">View on GitHub</a>
-      </div>
-
-      <div id="processingFailed" class="hidden mt-6 text-center">
-        <p class="text-red-300 text-sm mb-4">The build failed. Check the logs on GitHub for the exact error.</p>
-        <button onclick="retryBuild()" class="w-full bg-indigo-600 hover:bg-indigo-500 px-4 py-3 rounded-xl font-semibold">Retry Build</button>
-      </div>
+    <div id="processing-card" class="card hidden">
+      <h3>Building APK...</h3>
+      <p id="build-status" style="margin: 12px 0;">Preparing project environment...</p>
     </div>
 
-    <!-- DOWNLOAD SCREEN - Shows when a build succeeds -->
-    <div id="download" class="hidden w-full max-w-xl glass p-8 rounded-2xl animate-fadeIn text-center">
-      <div class="text-5xl mb-3">✅</div>
-      <h2 class="text-2xl font-bold mb-1">Build complete</h2>
-      <p id="downloadAppName" class="text-gray-400 mb-6"></p>
-
-      <button id="downloadApkBtn" onclick="downloadApk()" class="w-full bg-green-600 hover:bg-green-500 px-6 py-4 rounded-xl font-bold text-lg transition mb-4">
-        Download APK
-      </button>
-
-      <div class="grid grid-cols-2 gap-3 text-left text-sm bg-gray-900/60 rounded-xl p-4 mb-6">
-        <div><span class="text-gray-500">Version</span><br><span id="dlVersion">—</span></div>
-        <div><span class="text-gray-500">Package</span><br><span id="dlPackage">—</span></div>
-        <div><span class="text-gray-500">File size</span><br><span id="dlSize">—</span></div>
-        <div><span class="text-gray-500">Build time</span><br><span id="dlDuration">—</span></div>
-        <div class="col-span-2"><span class="text-gray-500">Generated</span><br><span id="dlDate">—</span></div>
-      </div>
-
-      <div id="qrcode" class="flex justify-center mb-4 bg-white p-3 rounded-xl w-fit mx-auto"></div>
-      <p class="text-xs text-gray-500 mb-6">Scan to open this build's page on GitHub (sign-in required to download).</p>
-
-      <div class="grid grid-cols-2 gap-3 mb-3">
-        <button onclick="copyRunLink()" class="bg-gray-800 hover:bg-gray-700 px-4 py-3 rounded-xl font-semibold text-sm">Copy Link</button>
-        <button onclick="shareApk()" class="bg-gray-800 hover:bg-gray-700 px-4 py-3 rounded-xl font-semibold text-sm">Share</button>
-        <a id="openActionsBtn" href="#" target="_blank" rel="noopener" class="bg-gray-800 hover:bg-gray-700 px-4 py-3 rounded-xl font-semibold text-sm text-center">Open in GitHub Actions</a>
-        <button onclick="deleteCurrentBuild()" class="bg-red-950 hover:bg-red-900 text-red-300 px-4 py-3 rounded-xl font-semibold text-sm">Delete Build</button>
-      </div>
-      <button onclick="startNewBuild()" class="w-full text-indigo-300 hover:text-indigo-200 text-sm py-2">← Start another build</button>
+    <div id="download-card" class="card hidden">
+      <h3>Build Successful! 🎉</h3>
+      <p style="margin: 12px 0;">Your APK has been generated successfully via GitHub Actions.</p>
+      <button id="download-btn">Download APK Artifact</button>
     </div>
+  </main>
 
-  </div>
-
-<script type="module" src="app.js"></script>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
