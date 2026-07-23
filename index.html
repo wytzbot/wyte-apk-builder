@@ -5,13 +5,47 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wyte Builder</title>
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#4F46E5">
+  <meta name="theme-color" content="#0F172A">
+  <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    body { font-family: Arial; display:flex; justify-content:center; align-items:center; height:100vh; background:#4F46E5; color:white; margin:0; }
-    h1 { font-size: 2rem; }
+    .gradient-bg { background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); }
+    .glass { backdrop-filter: blur(16px); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
   </style>
 </head>
-<body>
-  <h1>Welcome to Wyte Builder 🚀</h1>
+<body class="gradient-bg text-white min-h-screen">
+  <div id="app" class="flex flex-col items-center justify-center min-h-screen p-6">
+    
+    <!-- Welcome Page -->
+    <div id="welcome" class="text-center max-w-md glass p-10 rounded-3xl shadow-2xl animate-fadeIn">
+      <div class="text-6xl mb-4">🚀</div>
+      <h1 class="text-4xl font-bold mb-3">Wyte Builder</h1>
+      <p class="text-gray-300 mb-8">Convert any website to Native Android APK. Fast builds. Professional results.</p>
+      <button onclick="login()" class="w-full bg-indigo-600 hover:bg-indigo-500 px-6 py-4 rounded-xl font-bold text-lg transition transform hover:scale-105">
+        Continue with GitHub
+      </button>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="hidden w-full max-w-3xl">
+      <div class="glass p-6 rounded-2xl mb-6 flex items-center gap-4">
+        <img id="avatar" class="w-14 h-14 rounded-full">
+        <div>
+          <h2 class="text-2xl font-bold">Welcome back, <span id="username"></span></h2>
+          <p class="text-gray-400">Ready to build your next APK?</p>
+        </div>
+      </div>
+      
+      <div class="glass p-8 rounded-2xl">
+        <h3 class="text-2xl font-semibold mb-4">New APK Build</h3>
+        <input id="appName" type="text" placeholder="App Name e.g MyApp" class="w-full p-3 rounded-lg bg-gray-900 text-white mb-3 outline-none focus:ring-2 focus:ring-indigo-600">
+        <input id="url" type="text" placeholder="https://example.com" class="w-full p-3 rounded-lg bg-gray-900 text-white mb-4 outline-none focus:ring-2 focus:ring-indigo-600">
+        <button id="buildBtn" onclick="triggerBuild()" class="w-full bg-green-600 hover:bg-green-500 px-6 py-4 rounded-xl font-bold text-lg transition">Generate APK</button>
+        <p class="text-xs text-gray-400 mt-3">Build takes 2-3 mins. Download from Actions tab.</p>
+      </div>
+    </div>
+
+  </div>
+
+<script type="module" src="app.js"></script>
 </body>
 </html>
