@@ -1,192 +1,60 @@
-name: Wyte APK Builder
+name: Wyte URL to APK Builder
+
 on:
   workflow_dispatch:
     inputs:
-      website_url:
-        description: 'Website URL'
+      app_url:
+        description: 'Website URL to convert'
         required: true
         type: string
       app_name:
         description: 'App Name'
         required: true
         type: string
-      package_name:
-        description: 'Package Name (e.g., com.example.app)'
-        required: true
-        type: string
-      version:
-        description: 'Version Name (e.g., 1.0.0)'
-        required: true
-        default: '1.0.0'
-        type: string
-      version_code:
-        description: 'Version Code (e.g., 1)'
-        required: true
-        default: '1'
-        type: string
-      orientation:
-        description: 'Screen Orientation'
-        required: true
-        default: 'portrait'
-        type: choice
-        options:
-          - portrait
-          - landscape
-          - full
-      theme_color:
-        description: 'Theme Color (HEX)'
-        required: true
-        default: '#6750A4'
-        type: string
 
 jobs:
   build-apk:
-    name: Build Android APK
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout Repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
+          distribution: 'temurin'
 
-      - name: Validate Inputs
-        run: |
-          echo "Building APK for URL: ${{ inputs.website_url }}"
-          echo "App Name: ${{ inputs.app_name }}"
-          echo "Package: ${{ inputs.package_name }}"
+      - name: Install Bubblewrap
+        run: npm install -g @bubblewrap/cli
 
-      - name: Generate TWA / WebView Android Project
+      # Decode keystore from GitHub Secret
+      - name: Setup Keystore
         run: |
-          mkdir -p android-app/app/src/main/java/com/wyte/builder
-          mkdir -p android-app/app/src/main/res/values
-          mkdir -p android-app/app/src/main/res/mipmap
+          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > android.keystore
+
+      - name: Init PWA and Build Signed AAB
+        run: |
+          yes | bubblewrap init \
+            --manifest="${{ inputs.app_url }}/manifest.json" \
+            --directory=./app \
+            --skipPwaValidation
           
-          # Create AndroidManifest.xml
-          cat << 'EOF' > android-app/app/src/main/AndroidManifest.xml
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              package="${{ inputs.package_name }}">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-              <application
-                  android:allowBackup="true"
-                  android:icon="@mipmap/ic_launcher"
-                  android:label="${{ inputs.app_name }}"
-                  android:roundIcon="@mipmap/ic_launcher_round"
-                  android:supportsRtl="true"
-                  android:theme="@style/Theme.WyteApp">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:screenOrientation="${{ inputs.orientation }}">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
+          cd ./app
+          bubblewrap build --skipPwaValidation \
+            --keystore=../android.keystore \
+            --keystore-password=${{ secrets.KEYSTORE_PASSWORD }} \
+            --key-alias=${{ secrets.KEY_ALIAS }} \
+            --key-alias-password=${{ secrets.KEY_ALIAS_PASSWORD }}
 
-          # Create strings.xml
-          cat << 'EOF' > android-app/app/src/main/res/values/strings.xml
-          <resources>
-              <string name="app_name">${{ inputs.app_name }}</string>
-              <string name="target_url">${{ inputs.website_url }}</string>
-          </resources>
-          EOF
-
-          # Create styles.xml
-          cat << 'EOF' > android-app/app/src/main/res/values/styles.xml
-          <resources>
-              <style name="Theme.WyteApp" parent="Theme.Material3.DayNight.NoActionBar">
-                  <item name="colorPrimary">#{@{ inputs.theme_color }}</item>
-              </style>
-          </resources>
-          EOF
-
-          # Create simple MainActivity.java using WebView
-          cat << 'EOF' > android-app/app/src/main/java/com/wyte/builder/MainActivity.java
-          package com.wyte.builder;
-          import android.app.Activity;
-          import android.os.Bundle;
-          import android.webkit.WebView;
-          import android.webkit.WebViewClient;
-          public class MainActivity extends Activity {
-              private WebView webView;
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-                  webView = new WebView(this);
-                  webView.getSettings().setJavaScriptEnabled(true);
-                  webView.setWebViewClient(new WebViewClient());
-                  webView.loadUrl("${{ inputs.website_url }}");
-                  setContentView(webView);
-              }
-              @Override
-              public void onBackPressed() {
-                  if (webView.canGoBack()) {
-                      webView.goBack();
-                  } else {
-                      super.onBackPressed();
-                  }
-              }
-          }
-          EOF
-
-          # Create minimal build.gradle files for compilation testing
-          cat << 'EOF' > android-app/build.gradle
-          buildscript {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-              dependencies {
-                  classpath 'com.android.tools.build:gradle:8.1.1'
-              }
-          }
-          allprojects {
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          EOF
-
-          cat << 'EOF' > android-app/settings.gradle
-          include ':app'
-          EOF
-
-          cat << 'EOF' > android-app/app/build.gradle
-          plugins {
-              id 'com.android.application'
-          }
-          android {
-              compileSdk 34
-              defaultConfig {
-                  applicationId "${{ inputs.package_name }}"
-                  minSdk 21
-                  targetSdk 34
-                  versionCode ${{ inputs.version_code }}
-                  versionName "${{ inputs.version }}"
-              }
-          }
-          EOF
-
-      - name: Build Debug APK with Gradle
-        working-directory: ./android-app
-        run: |
-          chmod +x gradlew || true
-          # Fallback simulation if gradle wrapper is absent in minimal scaffold
-          mkdir -p app/build/outputs/apk/debug/
-          echo "Mock APK binary content for ${{ inputs.app_name }}" > app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Upload APK Artifact
+      - name: Upload Signed AAB
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: android-app/app/build/outputs/apk/debug/app-debug.apk
+          name: ${{ inputs.app_name }}-signed-aab
+          path: ./app/*.
