@@ -74,7 +74,7 @@ on:
         type: string
 
 concurrency:
-  group: wyte-build-${{ inputs.package_name }}
+  group: wyte-build-${{ inputs.package_name }}-${{ github.run_id }}
   cancel-in-progress: false
 
 permissions:
