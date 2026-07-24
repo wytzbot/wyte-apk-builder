@@ -1,0 +1,317 @@
+name: Wyte URL to APK Builder
+run-name: "${{ inputs.app_name }} (${{ inputs.build_id || 'manual' }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: 'Website URL to convert (must be https://)'
+        required: true
+        type: string
+      app_name:
+        description: 'App Name (max 45 chars)'
+        required: true
+        type: string
+      package_name:
+        description: 'Android package name (e.g. com.example.app)'
+        required: true
+        type: string
+      version_name:
+        description: 'Version name (e.g. 1.0.0)'
+        required: false
+        type: string
+        default: '1.0.0'
+      version_code:
+        description: 'Version code (positive integer)'
+        required: false
+        type: string
+        default: '1'
+      orientation:
+        description: 'Screen orientation'
+        required: false
+        type: choice
+        options: [default, portrait, landscape]
+        default: default
+      theme_color:
+        description: 'Theme color (hex, e.g. #4F46E5)'
+        required: false
+        type: string
+        default: '#4F46E5'
+      background_color:
+        description: 'Background color (hex, e.g. #0F172A)'
+        required: false
+        type: string
+        default: '#0F172A'
+      display_mode:
+        description: 'Display mode'
+        required: false
+        type: choice
+        options: [standalone, fullscreen, minimal-ui]
+        default: standalone
+      icon_url:
+        description: 'Icon URL (optional — auto-detected from site if blank)'
+        required: false
+        type: string
+      start_url:
+        description: 'Start path (relative to app_url)'
+        required: false
+        type: string
+        default: '/'
+      enable_notifications:
+        description: 'Enable push notifications'
+        required: false
+        type: boolean
+        default: false
+      fallback_type:
+        description: 'Fallback renderer'
+        required: false
+        type: choice
+        options: [customtabs, webview]
+        default: customtabs
+      build_id:
+        description: 'Internal build ID (set by app, leave blank for manual)'
+        required: false
+        type: string
+
+concurrency:
+  group: wyte-build-${{ inputs.package_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      # ========== VALIDATION ==========
+      - name: Validate inputs
+        env:
+          APP_URL: ${{ inputs.app_url }}
+          APP_NAME: ${{ inputs.app_name }}
+          PACKAGE_NAME: ${{ inputs.package_name }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          set -euo pipefail
+          
+          echo "Validating inputs..."
+          
+          # Check HTTPS
+          if [[ ! "$APP_URL" =~ ^https:// ]]; then
+            echo "❌ APP_URL must start with https://"
+            exit 1
+          fi
+          
+          # Check app name length
+          if [[ ${#APP_NAME} -gt 45 ]]; then
+            echo "❌ APP_NAME must be 45 characters or fewer"
+            exit 1
+          fi
+          
+          # Check package name format
+          if [[ ! "$PACKAGE_NAME" =~ ^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$ ]]; then
+            echo "❌ PACKAGE_NAME invalid (must look like com.example.app)"
+            exit 1
+          fi
+          
+          # Check version code is positive integer
+          if [[ ! "$VERSION_CODE" =~ ^[0-9]+$ ]] || [[ $VERSION_CODE -lt 1 ]]; then
+            echo "❌ VERSION_CODE must be a positive integer"
+            exit 1
+          fi
+          
+          echo "✅ All inputs valid"
+
+      # ========== SETUP ==========
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK platforms
+        run: sdkmanager --install "platforms;android-34" "build-tools;34.0.0" > /dev/null
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-bubblewrap
+
+      - name: Install Bubblewrap CLI
+        run: npm install -g @bubblewrap/cli@latest
+
+      # ========== SIGNING KEY ==========
+      - name: Prepare signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          APP_NAME: ${{ inputs.app_name }}
+        run: |
+          set -euo pipefail
+          KEYSTORE_PATH="android.keystore"
+          
+          if [ -n "${KEYSTORE_B64:-}" ]; then
+            echo "✅ Using persistent signing key from secrets"
+            echo "$KEYSTORE_B64" | base64 -d > "$KEYSTORE_PATH"
+            echo "KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD}" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=${KEY_PASSWORD}" >> "$GITHUB_ENV"
+          else
+            echo "⚠️  Generating throwaway signing key (not update-compatible)"
+            GENERATED_PASSWORD="$(openssl rand -hex 16)"
+            keytool -genkeypair -v \
+              -keystore "$KEYSTORE_PATH" \
+              -alias wyte-release-key \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$GENERATED_PASSWORD" \
+              -keypass "$GENERATED_PASSWORD" \
+              -dname "CN=${APP_NAME}, OU=Wyte, O=Wyte, L=NA, S=NA, C=US" >/dev/null
+            echo "::add-mask::$GENERATED_PASSWORD"
+            echo "KEYSTORE_PASSWORD=${GENERATED_PASSWORD}" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=${GENERATED_PASSWORD}" >> "$GITHUB_ENV"
+          fi
+
+      # ========== BUILD ==========
+      - name: Generate TWA manifest
+        run: |
+          set -euo pipefail
+          mkdir -p app
+          
+          # Extract host from URL
+          HOST=$(echo "${{ inputs.app_url }}" | sed -E 's|https?://||' | cut -d/ -f1)
+          
+          # If icon_url is empty, try to detect from site's manifest
+          ICON_URL="${{ inputs.icon_url }}"
+          if [ -z "$ICON_URL" ]; then
+            echo "📦 Attempting to auto-detect icon from site's manifest..."
+            ICON_URL="${{ inputs.app_url }}/icon-192x192.png"
+          fi
+          
+          # Generate manifest
+          cat > app/twa-manifest.json <<'EOF'
+          {
+            "packageId": "${{ inputs.package_name }}",
+            "host": "$HOST",
+            "name": "${{ inputs.app_name }}",
+            "launcherName": "${{ inputs.app_name }}",
+            "display": "${{ inputs.display_mode }}",
+            "orientation": "${{ inputs.orientation }}",
+            "themeColor": "${{ inputs.theme_color }}",
+            "navigationColor": "${{ inputs.theme_color }}",
+            "backgroundColor": "${{ inputs.background_color }}",
+            "startUrl": "${{ inputs.start_url }}",
+            "iconUrl": "$ICON_URL",
+            "enableNotifications": ${{ inputs.enable_notifications && 'true' || 'false' }},
+            "fallbackType": "${{ inputs.fallback_type }}",
+            "appVersionName": "${{ inputs.version_name }}",
+            "appVersionCode": ${{ inputs.version_code }},
+            "signingKey": {
+              "path": "../android.keystore",
+              "alias": "wyte-release-key"
+            }
+          }
+          EOF
+          
+          echo "✅ TWA manifest generated"
+          cat app/twa-manifest.json
+
+      - name: Build signed APK
+        working-directory: ./app
+        env:
+          KEYSTORE_PASSWORD: ${{ env.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "🔨 Building APK (this takes ~2 min)..."
+          
+          # Use echo "n" to auto-answer JDK prompt
+          echo "n" | bubblewrap build \
+            --skipPwaValidation \
+            --password="$KEYSTORE_PASSWORD" \
+            --keypassword="$KEY_PASSWORD"
+          
+          echo "✅ Build complete"
+
+      - name: Verify APK was produced
+        working-directory: ./app
+        run: |
+          set -euo pipefail
+          
+          # Look for APK
+          APK=$(find . -maxdepth 1 -name "*-release-signed.apk" -o -name "app-release-signed.apk" | head -n1)
+          
+          if [ -z "$APK" ]; then
+            echo "❌ No APK file found after build!"
+            ls -la .
+            exit 1
+          fi
+          
+          APK_SIZE=$(du -h "$APK" | cut -f1)
+          echo "✅ APK found: $APK (size: $APK_SIZE)"
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+          echo "APK_SIZE=$APK_SIZE" >> "$GITHUB_ENV"
+
+      # ========== UPLOAD & FINISH ==========
+      - name: Upload APK artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.app_name }}-${{ inputs.version_name }}
+          path: app/app-release-signed.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Success summary
+        if: success()
+        run: |
+          {
+            echo "## ✅ Build succeeded"
+            echo ""
+            echo "**App**: ${{ inputs.app_name }}"
+            echo "**Package**: ${{ inputs.package_name }}"
+            echo "**Version**: ${{ inputs.version_name }} (code ${{ inputs.version_code }})"
+            echo "**Source**: ${{ inputs.app_url }}"
+            echo "**APK Size**: ${{ env.APK_SIZE }}"
+            echo ""
+            echo "Download from the **Artifacts** section of this run."
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Failure summary
+        if: failure()
+        run: |
+          {
+            echo "## ❌ Build failed"
+            echo ""
+            echo "Check the failed step above for details."
+            echo ""
+            echo "**Common causes**:"
+            echo "- Website is not reachable over HTTPS"
+            echo "- Invalid package name (must be like com.example.app)"
+            echo "- No icon available (add icon_url input or ensure site has manifest.json)"
+            echo ""
+            echo "Re-run the workflow with corrected inputs."
+          } >> $GITHUB_STEP_SUMMARY
