@@ -1,16 +1,22 @@
-name: Wyte URL to APK Builder
+name: Build Wyte APK
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # <-- allows manual run from Actions tab
     inputs:
       app_url:
-        description: 'Website URL to convert'
+        description: 'Your PWA/Website URL'
         required: true
         type: string
       app_name:
         description: 'App Name'
         required: true
         type: string
+      package_name:
+        description: 'Package name e.g com.wyte.myapp'
+        required: true
+        type: string
+  push:
+    branches: [ main ]  # auto build when you push to main
 
 jobs:
   build-apk:
@@ -25,36 +31,32 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
       - name: Install Bubblewrap
         run: npm install -g @bubblewrap/cli
 
-      # Decode keystore from GitHub Secret
-      - name: Setup Keystore
+      - name: Init PWA with TWA
         run: |
-          echo "${{ secrets.KEYSTORE_FILE }}" | base64 -d > android.keystore
-
-      - name: Init PWA and Build Signed AAB
-        run: |
-          yes | bubblewrap init \
+          bubblewrap init \
             --manifest="${{ inputs.app_url }}/manifest.json" \
             --directory=./app \
-            --skipPwaValidation
-          
-          cd ./app
-          bubblewrap build --skipPwaValidation \
-            --keystore=../android.keystore \
-            --keystore-password=${{ secrets.KEYSTORE_PASSWORD }} \
-            --key-alias=${{ secrets.KEY_ALIAS }} \
-            --key-alias-password=${{ secrets.KEY_ALIAS_PASSWORD }}
+            --packageName="${{ inputs.package_name }}" \
+            --appName="${{ inputs.app_name }}" \
+            --shortName="${{ inputs.app_name }}" \
+            --skipPwaValidation \
+            --force \
+            --enableAutoVerify \
+            --enableSiteSettingsShortcut \
+            --signingKeyPath=./android.keystore \
+            --signingKeyAlias=wyte \
+            --signingKeyStorePassword=${{ secrets.KEYSTORE_PASSWORD }} \
+            --signingKeyPassword=${{ secrets.KEY_PASSWORD }}
 
-      - name: Upload Signed AAB
+      - name: Build APK
+        working-directory: ./app
+        run: bubblewrap build
+
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.app_name }}-signed-aab
-          path: ./app/*.
+          name: ${{ inputs.app_name }}-release.apk
+          path: ./app/app-release-signed.apk
